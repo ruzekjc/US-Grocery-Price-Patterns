@@ -1,80 +1,110 @@
-# === MULTIPLE LINEAR REGRESSION TEMPLATE ===
-
 import pandas as pd
-import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.compose import ColumnTransformer
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import r2_score, mean_squared_error
+import statsmodels.formula.api as smf
+import statsmodels.api as sm
+import matplotlib.pyplot as plt
+import seaborn as sns
+import scipy.stats as stats
+import os
 
-# df = your merged FMAP + BLS + PCE dataset
-# Target variable example: 'fmap_price'
+output_folder = "Linear Regression Graphs"
+os.makedirs(output_folder, exist_ok=True)
 
-df = master_df.copy()
+# loading data
+df = pd.read_csv("cleaned_data/cleaned_bls_data.csv")
 
-# --------------------
-# 1. Feature selection
-# --------------------
-features = [
-    "region",     
-    "category",
-    "bls_cpi",
-    "pce_spend",
-    "is_post_2020",
-    "month"
+# restricting to regions we care about
+regions = ["Northeast", "Midwest", "South", "West"]
+df = df[df["area_name"].isin(regions)].copy()
+
+# cleaning data to make sure the year and value are appropriate types
+df["year"] = pd.to_numeric(df["year"], errors="coerce")
+df["value"] = pd.to_numeric(df["value"], errors="coerce")
+df = df.dropna(subset=["year", "value"])
+
+# definiing a post pandemic feature to simplify training
+df["post_pandemic"] = (df["year"] >= 2020).astype(int)
+
+# specific grocery items we care to look into
+items = [
+    "All uncooked ground beef, per lb. (453.6 gm)",
+    "Bananas, per lb. (453.6 gm)",
+    "Milk, fresh, low-fat, reduced fat, skim, per gal. (3.8 lit)",
+    "Potato chips, per 16 oz.",
+    "Bread, white, pan, per lb. (453.6 gm)"
 ]
 
-X = df[features]
-y = df["fmap_price"]
+df = df[df["item_name"].isin(items)]
 
-# -------------------------------------
-# 2. OneHotEncode categorical variables
-# -------------------------------------
-categorical_cols = ["region", "category", "month"]
-numeric_cols = ["bls_cpi", "pce_spend", "is_post_2020"]
+models = {}
+impacts = {}
 
-preprocessor = ColumnTransformer(
-    transformers=[
-        ("cat", OneHotEncoder(drop="first"), categorical_cols),
-        ("num", "passthrough", numeric_cols)
-    ]
-)
+# running regression per item and saving the graphs
+for item in items:
+    item_df = df[df["item_name"] == item]
 
-# --------------------
-# 3. Train/test split
-# --------------------
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, shuffle=True, random_state=42
-)
+    # tit model 
+    model = smf.ols(
+        formula="value ~ post_pandemic * C(area_name) + year",
+        data=item_df
+    ).fit(cov_type="HC3")
 
-# --------------------
-# 4. Fit model
-# --------------------
-model = LinearRegression()
-X_train_transformed = preprocessor.fit_transform(X_train)
-X_test_transformed = preprocessor.transform(X_test)
+    models[item] = model
 
-model.fit(X_train_transformed, y_train)
+    coef = model.params
+    baseline = coef.get("post_pandemic", 0)
 
-# --------------------
-# 5. Evaluate
-# --------------------
-y_pred = model.predict(X_test_transformed)
-print("R²:", r2_score(y_test, y_pred))
-print("RMSE:", np.sqrt(mean_squared_error(y_test, y_pred)))
+    impacts[item] = {
+        "Northeast": baseline,
+        "Midwest": baseline + coef.get("post_pandemic:C(area_name)[T.Midwest]", 0),
+        "South": baseline + coef.get("post_pandemic:C(area_name)[T.South]", 0),
+        "West": baseline + coef.get("post_pandemic:C(area_name)[T.West]", 0),
+    }
 
-# --------------------
-# 6. Get coefficients
-# --------------------
-feature_names = (
-    preprocessor.named_transformers_["cat"].get_feature_names_out(categorical_cols).tolist()
-    + numeric_cols
-)
+    file_item = item.replace("/", "-")
 
-coef_df = pd.DataFrame({
-    "feature": feature_names,
-    "coefficient": model.coef_
-}).sort_values(by="coefficient", ascending=False)
+    # residuals vs. fitted graphs
+    plt.figure(figsize=(8, 5))
+    sns.scatterplot(x=model.fittedvalues, y=model.resid, s=25)
+    plt.axhline(0, color="red", linestyle="--")
+    plt.title(f"Residuals vs Fitted — {item}")
+    plt.xlabel("Fitted Values")
+    plt.ylabel("Residuals")
+    plt.tight_layout()
+    plt.savefig(f"{output_folder}/{file_item}_residuals_vs_fitted.png")
+    plt.close()
 
-display(coef_df.head(20))
+    # qq plot
+    plt.figure(figsize=(6, 6))
+    sm.qqplot(model.resid, line="45", fit=True)
+    plt.title(f"QQ Plot — {item}")
+    plt.tight_layout()
+    plt.savefig(f"{output_folder}/{file_item}_qqplot.png")
+    plt.close()
+
+    # timeline of average prices over time
+    plt.figure(figsize=(10, 6))
+    sns.lineplot(
+        data=item_df,
+        x="year",
+        y="value",
+        hue="area_name",
+        marker="o",
+        ci=None,
+        estimator="mean"
+    )
+    plt.axvline(2020, color="red", linestyle="--", label="Pandemic Start (2020)")
+    plt.title(f"Price Over Time — {item}")
+    plt.xlabel("Year")
+    plt.ylabel("Price ($)")
+    plt.legend(title="Region")
+    plt.tight_layout()
+    plt.savefig(f"{output_folder}/{file_item}_timeline.png")
+    plt.close()
+
+# regional impact charts
+for item, effect in impacts.items():
+    print("\n=====================================")
+    print(f"Pandemic Impact for: {item}")
+    print("=====================================")
+    for region, value in effect.items():
+        print(f"{region}: {value:.3f}")
