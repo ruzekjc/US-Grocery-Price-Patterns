@@ -1,0 +1,30 @@
+# U.S. Grocery Price Analysis (2018–2024)
+This project explores how grocery prices have changed across major U.S. regions from 2018 to 2024, 
+with a focus on identifying regional inflation patterns and how specific food categories—such as dairy, produce,
+and pantry staples—were affected before and after the COVID-19 pandemic.
+
+The analysis uses two large public datasets (FMAP and SAPCE), processes them with Python (pandas, numpy), 
+and visualizes key trends using matplotlib and seaborn. All work is contained in a well-documented Jupyter notebook for full reproducibility.
+
+## Goals
+* Examine year-over-year changes in grocery prices.
+* Compare regional differences across major U.S. market areas.
+* Identify categories most impacted by pandemic-era inflation.
+* Produce interpretable visualizations that highlight long-term trends.
+
+## Datasets Used
+* FMAP: Monthly food price data with attributes such as year, month, category, and value.
+* SAPCE: Regional economic indicators including geographic codes and descriptive metadata.
+
+## Tools Used:
+* Python
+> * pandas
+> * numpy
+> * matplotlib, seaborn
+* Jupyter notebook
+* Github
+
+## Key Takeaways:
+* Grocery prices rose sharply after 2020, but not uniformly—some regions experienced higher inflation than others.
+* Price behavior varies significantly across food categories, revealing supply chain and demand-related impacts.
+* Python-based EDA provides a clear, replicable framework for exploring economic datasets.
